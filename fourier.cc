@@ -45,7 +45,7 @@ const char* shaderx = R"compsx(
     
 #version 460 core
 
-layout(local_size_x = 1, local_size_y = 1) in; // by default all are 1, so z=1 as well
+layout(local_size_x = 1, local_size_y = 1) in;
 
 uniform layout(binding=1, r8ui)  readonly  uimage2D imin;
 //uniform usampler2D texsampler;
@@ -89,7 +89,7 @@ const char* shadery = R"compsy(
     
 #version 460 core
 
-layout(local_size_x = 1, local_size_y = 1) in; // by default all are 1, so z=1 as well
+layout(local_size_x = 1, local_size_y = 1) in;
 
 uniform layout(rg32f) readonly  image2D fxin;
 uniform layout(rg32f) writeonly image2D fout;
