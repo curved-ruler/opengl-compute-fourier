@@ -47,7 +47,7 @@ const char* shaderx = R"compsx(
 
 layout(local_size_x = 1, local_size_y = 1) in;
 
-layout(std430, binding=0) buffer buf0 { vec2 imin[]; };
+layout(std430, binding=0) buffer buf0 { vec2 fin[]; };
 layout(std430, binding=1) buffer buf1 { vec2 fxout[]; };
 uniform int w;
 uniform int h;
@@ -69,14 +69,12 @@ void main ()
     
     for (int n=0 ; n<w ; ++n)
     {
-        float c  = float(n) * float(x) * -2.0 * pi / float(w);
+        float c  = float(n) * float(x) * 2.0 * pi / float(w);
         vec2  ec = vec2(cos(c), sin(c)); // exp(ic)
         
-        vec2 s = imin[y*w + n];
-        res += cmul(s, ec) / float(w);
+        vec2 s = fin[y*w + n];
         
-        //uvec4 s = texture(texsampler, vec2((float(n)+0.5)/float(w), (float(y)+0.5)/float(h)));
-        //res += cmul(vec2(float(s.x)/255.0, 0.0), ec) / float(w);
+        res += cmul(s, ec);
     }
     
     fxout[y*w + x] = res;
@@ -91,7 +89,7 @@ const char* shadery = R"compsy(
 layout(local_size_x = 1, local_size_y = 1) in;
 
 layout(std430, binding=0) buffer buf0 { vec2 fxin[]; };
-layout(std430, binding=1) buffer buf1 { vec2 fout[]; };
+layout(std430, binding=1) buffer buf1 { vec2 dout[]; };
 uniform int w;
 uniform int h;
 
@@ -113,14 +111,14 @@ void main ()
     for (int n=0 ; n<h ; ++n)
     {
     
-        float c  = float(n) * float(y) * -2.0 * pi / float(h);
+        float c  = float(n) * float(y) * 2.0 * pi / float(h);
         vec2  ec = vec2(cos(c), sin(c)); // exp(ic)
         
         vec2 s = fxin[n*w + x];
         
-        res += cmul(s, ec) / float(h);
+        res += cmul(s, ec);
     }
-    fout[y*w + x] = res;
+    dout[y*w + x] = clamp(res, 0.0, 255.0);
 }
 
 )compsy";
@@ -185,7 +183,7 @@ int main (int argc, char** argv)
 {
     if (argc < 3)
     {
-        std::cout << "Usage: fourier <input image path> <out data file>" << std::endl;
+        std::cout << "Usage: fourier-inv <data file path> <output image>" << std::endl;
         return -1;
     }
     
@@ -209,36 +207,35 @@ int main (int argc, char** argv)
     
     
     int w, h, ch;
-    unsigned char* im = stbi_load(argv[1], &w, &h, &ch, 0);
-    if (stbi_failure_reason())
-    {
-        std::cout << "Stbi ERROR: " << stbi_failure_reason() << std::endl;
-        return -3;
-    }
-    std::cout << "Reading image " << argv[1] << ", w-h-ch: " << w << " - " << h << " - " << ch <<std::endl;
-    if (ch > 1)
-    {
-        std::cout << "Currently handling only single-channel images" << std::endl;
-        delete[] im;
-        return -4;
-    }
+    
+    std::ifstream ifs(argv[1], std::ios::binary);
+    ifs.read((char*)&w,  sizeof(int));
+    ifs.read((char*)&h,  sizeof(int));
+    ifs.read((char*)&ch, sizeof(int));
+    std::cout << "Reading data: " << argv[1] << ", w-h-ch: " << w << " - " << h << " - " << ch <<std::endl;
     
     float* fxy = new float[w*h*2];
-    for (int i=0 ; i<w*h ; ++i) { fxy[2*i] = im[i]; fxy[2*i+1] = 0.0f; }
+    ifs.read((char*)(fxy), w*h*2*sizeof(float));
+    ifs.close();
     
     GLuint VAO;
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
     
-    GLuint fxbuf = 0;
-    glGenBuffers(1, &fxbuf);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, fxbuf);
+    GLuint ibuf = 0;
+    glGenBuffers(1, &ibuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ibuf);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, w*h*2*sizeof(float), fxy, GL_DYNAMIC_DRAW);
+    
+    GLuint ifxbuf = 0;
+    glGenBuffers(1, &ifxbuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ifxbuf);
     glBufferData(GL_SHADER_STORAGE_BUFFER, w*h*2*sizeof(float), 0, GL_DYNAMIC_COPY);
     
-    GLuint fxybuf = 0;
-    glGenBuffers(1, &fxybuf);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, fxybuf);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, w*h*2*sizeof(float), fxy, GL_DYNAMIC_COPY);
+    GLuint ifxybuf = 0;
+    glGenBuffers(1, &ifxybuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ifxybuf);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, w*h*2*sizeof(float), 0, GL_DYNAMIC_READ);
     
     
     // *********************** 1st pass ***********************
@@ -246,8 +243,8 @@ int main (int argc, char** argv)
     glUniform1i(glGetUniformLocation(programx, "w"), w);
     glUniform1i(glGetUniformLocation(programx, "h"), h);
     
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, fxybuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, fxbuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ibuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ifxbuf);
     
     glDispatchCompute(w, h, 1);
     
@@ -260,8 +257,8 @@ int main (int argc, char** argv)
     glUniform1i(glGetUniformLocation(programy, "w"), w);
     glUniform1i(glGetUniformLocation(programy, "h"), h);
     
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, fxbuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, fxybuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ifxbuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ifxybuf);
     
     glDispatchCompute(w, h, 1);
     
@@ -270,24 +267,31 @@ int main (int argc, char** argv)
     
     
     // ******************** data retreival ********************
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, fxybuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ifxybuf);
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, w*h*2*sizeof(float), fxy);
     
     GL_CHECK_ERROR();
     
-    std::ofstream ofs(argv[2], std::ios::binary);
-    ofs.write((const char*)(&w),  sizeof(int));
-    ofs.write((const char*)(&h),  sizeof(int));
-    ofs.write((const char*)(&ch), sizeof(int));
-    ofs.write((const char*)(fxy), w*h*2*sizeof(float));
-    //ofs.write((const char*)(im), w*h*sizeof(unsigned char));
-    ofs.close();
+    unsigned char* imout = new unsigned char[w*h];
+    /*
+    float dmax = 0.0f;
+    float dmin = 1000.0f;
+    for (int i=0 ; i<w*h ; ++i)
+    {
+        if (fxy[2*i] < dmin) { dmin = fxy[2*i]; }
+        if (fxy[2*i] > dmax) { dmax = fxy[2*i]; }
+        imout[i] = (unsigned char)(fxy[i*2]);
+    }
+    std::cout << "Dmin: " << dmin << ", Dmax: " << dmax << std::endl;
+    */
+    stbi_write_png(argv[2], w, h, 1, imout, w);
     
     
-    delete[] im;
+    delete[] imout;
     delete[] fxy;
-    glDeleteBuffers(1, &fxbuf);
-    glDeleteBuffers(1, &fxybuf);
+    glDeleteBuffers(1, &ibuf);
+    glDeleteBuffers(1, &ifxbuf);
+    glDeleteBuffers(1, &ifxybuf);
     glDeleteVertexArrays(1, &VAO);
     
     glfwTerminate();

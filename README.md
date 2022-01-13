@@ -3,4 +3,4 @@
 
 OpenGL compute shader for DFT
 
-NOTE: NOT IN A WORKING STATE
+Dependencies: glad, GLFW, stb image
