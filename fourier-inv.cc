@@ -273,7 +273,7 @@ int main (int argc, char** argv)
     GL_CHECK_ERROR();
     
     unsigned char* imout = new unsigned char[w*h];
-    /*
+    
     float dmax = 0.0f;
     float dmin = 1000.0f;
     for (int i=0 ; i<w*h ; ++i)
@@ -283,7 +283,7 @@ int main (int argc, char** argv)
         imout[i] = (unsigned char)(fxy[i*2]);
     }
     std::cout << "Dmin: " << dmin << ", Dmax: " << dmax << std::endl;
-    */
+    
     stbi_write_png(argv[2], w, h, 1, imout, w);
     
     

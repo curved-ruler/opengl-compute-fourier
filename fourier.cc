@@ -269,7 +269,7 @@ int main (int argc, char** argv)
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     
     
-    // ******************** data retreival ********************
+    // ******************** data retrieval ********************
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, fxybuf);
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, w*h*2*sizeof(float), fxy);
     
